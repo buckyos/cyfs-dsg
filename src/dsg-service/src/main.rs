@@ -1,5 +1,3 @@
-mod contract_service;
-mod cache_service;
 use std::sync::Arc;
 use std::time::Duration;
 use config::builder::DefaultState;
@@ -8,8 +6,8 @@ use cyfs_lib::*;
 use cyfs_base::*;
 use cyfs_util::process::ProcessAction;
 use cyfs_dsg_client::*;
-use contract_service::*;
 use cyfs_util::get_app_data_dir;
+use dsg_service::{DsgService, DsgServiceConfig};
 
 
 fn main() {

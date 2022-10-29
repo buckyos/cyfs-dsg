@@ -13,8 +13,10 @@ use async_trait::async_trait;
 use cyfs_base::*;
 use cyfs_bdt::*;
 use cyfs_lib::*;
+use cyfs_task_manager::{TaskId, TaskManager};
 use cyfs_util::*;
 use cyfs_dsg_client::*;
+use crate::{MemoryTaskStore, RECOVERY_TASK, RecoveryTaskFactory, RecoveryTaskParam};
 
 
 pub struct DsgServiceConfig {
@@ -138,7 +140,9 @@ impl ContractStates {
 struct ServiceImpl {
     config: DsgServiceConfig,
     stack: Arc<SharedCyfsStack>,
-    contracts: ContractStates
+    contracts: ContractStates,
+    task_manager: Arc<TaskManager>,
+    owner_id: ObjectId,
 }
 
 #[derive(Clone)]
@@ -156,11 +160,18 @@ impl DsgService {
         if config.split_chunk_size % ChunkAesCodec::enc_block_len() != 0 {
             return Err(BuckyError::new(BuckyErrorCode::InvalidInput, "config split not n * key length"));
         }
+        let owner_id = stack.local_device().desc().owner().as_ref().unwrap().clone();
+        let task_store = Arc::new(MemoryTaskStore::new());
+        let task_manager = TaskManager::new(task_store.clone(), task_store).await?;
         let service = Self(Arc::new(ServiceImpl {
             config,
             stack,
-            contracts: ContractStates::new()
+            contracts: ContractStates::new(),
+            task_manager,
+            owner_id
         }));
+
+        service.0.task_manager.register_task_factory(RecoveryTaskFactory::new(service.clone()))?;
 
         let _ = service.listen().await?;
         let _ = service.stack().wait_online(None).await?;
@@ -180,7 +191,7 @@ impl DsgService {
         Ok(service)
     }
 
-    fn stack(&self) -> &SharedCyfsStack {
+    pub fn stack(&self) -> &SharedCyfsStack {
         &self.0.stack.as_ref()
     }
 
@@ -353,6 +364,67 @@ impl DsgService {
                 err
             })?;
 
+        struct DsgCommands {
+            service: DsgService
+        }
+
+        #[async_trait]
+        impl EventListenerAsyncRoutine<RouterHandlerPostObjectRequest, RouterHandlerPostObjectResult> for DsgCommands {
+            async fn call(&self, param: &RouterHandlerPostObjectRequest) -> BuckyResult<RouterHandlerPostObjectResult> {
+                let req = DsgJSONObject::clone_from_slice(param.request.object.object_raw.as_slice())?;
+                let resp = if req.get_json_obj_type() == DsgJsonProtocol::Recovery as u16 {
+                    Some(self.service.on_recovery(param.request.common.source.dec.clone(), req.get()?).await?)
+                } else if req.get_json_obj_type() == DsgJsonProtocol::QueryRecoveryState as u16 {
+                    Some(self.service.on_query_recovery_state(req.get()?).await?)
+                } else {
+                    None
+                };
+                if let Some(resp_obj) = resp {
+                    Ok(RouterHandlerPostObjectResult {
+                        action: RouterHandlerAction::Response,
+                        request: None,
+                        response: Some(Ok(NONPostObjectInputResponse {
+                            object: Some(NONObjectInfo {
+                                object_id: resp_obj.desc().object_id(),
+                                object_raw: resp_obj.to_vec()?,
+                                object: None
+                            })
+                        }))
+                    })
+                } else {
+                    Ok(RouterHandlerPostObjectResult {
+                        action: RouterHandlerAction::Pass,
+                        request: None,
+                        response: Some(Ok(NONPostObjectInputResponse {
+                            object: None
+                        }))
+                    })
+                }
+            }
+        }
+
+        let path = RequestGlobalStatePath::new(None, Some("/dsg/service/commands/")).format_string();
+        let access = AccessString::full();
+        let item = GlobalStatePathAccessItem {
+            path: path.clone(),
+            access: GlobalStatePathGroupAccess::Default(access.value()),
+        };
+        self.stack().root_state_meta_stub(None, None).add_access(item).await?;
+
+        let _ = self.stack().router_handlers().add_handler(
+            RouterHandlerChain::Handler,
+            "OnDsgCommand",
+            0,
+            None,
+            Some(path),
+            RouterHandlerAction::Default,
+            Some(Box::new(OnQuery {service: self.clone()})))
+            .map_err(|err| {
+                log::error!("{} listen failed, err=register OnDsgCommand handler {}", self, err);
+                err
+            })?;
+
+
         Ok(())
     }
 
@@ -429,6 +501,25 @@ impl DsgService {
             _ => Err(BuckyError::new(BuckyErrorCode::InvalidInput, "invalid query"))
         }
 
+    }
+
+    async fn on_recovery(&self, dec_id: ObjectId, req: RecoveryReq) -> BuckyResult<DsgJSONObject> {
+        let params = RecoveryTaskParam {
+            contract_id: ObjectId::from_str(req.contract_id.as_str())?,
+            latest_state_id: ObjectId::from_str(req.latest_state_id.as_str())?,
+            target_id: ObjectId::from_str(req.target_id.as_str())?,
+            target_dec_id: ObjectId::from_str(req.target_dec_id.as_str())?
+        };
+        let task_id = self.0.task_manager.create_task(dec_id, DeviceId::default(), RECOVERY_TASK, params).await?;
+        self.0.task_manager.start_task(&task_id).await?;
+        Ok(DsgJSONObject::new(dsg_dec_id(), self.0.owner_id.clone(), DsgJsonProtocol::RecoveryResp as u16, &task_id.to_string())?)
+    }
+
+    async fn on_query_recovery_state(&self, task_id: String) -> BuckyResult<DsgJSONObject> {
+        let task_id = TaskId::from_str(task_id.as_str())?;
+        let task_state = self.0.task_manager.get_task_detail_status(&task_id).await?;
+        let state = RecoveryState::clone_from_slice(task_state.as_slice())?;
+        Ok(DsgJSONObject::new(dsg_dec_id(), self.0.owner_id.clone(), DsgJsonProtocol::QueryRecoveryStateResp as u16, &state)?)
     }
 
     pub(crate) async fn sync_contract_state(&self, state: DsgContractStateObject, from: Option<ObjectId>) -> BuckyResult<DsgContractStateObject> {
@@ -943,20 +1034,20 @@ impl DsgService {
     }
 
 
-    async fn get_object_from_noc<T: for <'de> RawDecode<'de>>(&self, id: ObjectId) -> BuckyResult<T> {
+    pub async fn get_object_from_noc<T: for <'de> RawDecode<'de>>(&self, id: ObjectId) -> BuckyResult<T> {
         let resp = self.stack().non_service().get_object(NONGetObjectOutputRequest::new(NONAPILevel::NOC, id, None)).await?;
         T::clone_from_slice(resp.object.object_raw.as_slice())
     }
 
-    async fn get_object_from_device<T: for <'de> RawDecode<'de>>(&self, from: ObjectId, id: ObjectId) -> BuckyResult<T> {
-        let mut req = NONGetObjectOutputRequest::new(NONAPILevel::NON, id, None);
+    pub async fn get_object_from_device<T: for <'de> RawDecode<'de>>(&self, from: ObjectId, id: ObjectId) -> BuckyResult<T> {
+        let mut req = NONGetObjectOutputRequest::new(NONAPILevel::Router, id, None);
         req.common.target = Some(from);
         let resp = self.stack().non_service().get_object(req).await?;
         T::clone_from_slice(resp.object.object_raw.as_slice())
     }
 
 
-    async fn put_object_to_noc<T: RawEncode>(&self, id: ObjectId, object: &T) -> BuckyResult<()> {
+    pub async fn put_object_to_noc<T: RawEncode>(&self, id: ObjectId, object: &T) -> BuckyResult<()> {
         let mut req = NONPutObjectOutputRequest::new(NONAPILevel::NOC, id, object.to_vec()?);
         req.access = Some(AccessString::full());
         let _ = self.stack().non_service().put_object(req).await?;
@@ -991,7 +1082,7 @@ impl DsgService {
         Ok(())
     }
 
-    async fn get_miner_device_id(&self, miner_id: &ObjectId) -> BuckyResult<ObjectId> {
+    pub async fn get_miner_device_id(&self, miner_id: &ObjectId) -> BuckyResult<ObjectId> {
         if miner_id.obj_type_code() == ObjectTypeCode::People {
             let resp = self.stack().util().resolve_ood(UtilResolveOODRequest {
                 common: UtilOutputRequestCommon {
@@ -1328,10 +1419,31 @@ impl DsgService {
         }
     }
 
-    pub async fn recovery(&self, contract_id: &ObjectId, state_id: &ObjectId) -> BuckyResult<()> {
-        let op = self.stack().root_state_stub(None, None).create_single_op_env().await?;
-        op.load_by_path(format!("/dsg-service/contracts/{}/", contract_id)).await?;
-        op.set_with_key("state", state_id, None, true).await?;
+    pub async fn recovery_contract_meta(&self, contract_id: &ObjectId, latest_state: &DsgContractStateObject, all_states: Vec<ObjectId>) -> BuckyResult<()> {
+        let state_ref = DsgContractStateObjectRef::from(latest_state);
+        let next_state = state_ref.next(DsgContractState::DataSourceStored)?;
+        let next_state_ref = DsgContractStateObjectRef::from(&next_state);
+        let op = self.stack().root_state_stub(None, None).create_path_op_env().await?;
+        let path = format!("/dsg-service/contracts/{}/", contract_id);
+        op.set_with_key(path.as_str(), "contract", contract_id, None, true).await?;
+        op.set_with_key(path.as_str(), "state", &next_state_ref.id(), None, true).await?;
+        for state_id in all_states.iter() {
+            op.insert_with_key(path.as_str(), "states", state_id).await?;
+        }
+        let mut chunk_list = Vec::new();
+        for state_id in all_states.iter().rev() {
+            let state: DsgContractStateObject = self.get_object_from_noc(state_id.clone()).await?;
+            let state_ref = DsgContractStateObjectRef::from(&state);
+            if let DsgContractState::DataSourceChanged(mut change) = state_ref.state() {
+                chunk_list.append(&mut change.chunks);
+            }
+        }
+        let manager = CyfsStackContractStoreChunkListManager::new(
+            Arc::new(self.stack().clone()),
+            &op,
+            "/dsg-service/contracts".to_string());
+        manager.set_chunk_list(contract_id, chunk_list).await?;
+
         op.commit().await?;
         Ok(())
     }

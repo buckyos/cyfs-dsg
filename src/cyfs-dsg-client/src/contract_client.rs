@@ -1,8 +1,8 @@
 use std::{convert::TryFrom, fmt::Debug, sync::Arc};
 use cyfs_base::*;
 use cyfs_lib::*;
-use log::info;
-use crate::{contracts::*, query::*};
+use crate::{contracts::*, DSGJSON, DsgJSONObject, DsgJsonProtocol, query::*, RecoveryReq, RecoveryState};
+use crate::shared_cyfs_stack_ex::{CyfsPath, SharedCyfsStackEx};
 
 pub struct DsgClientInterface<T>
 where
@@ -118,6 +118,32 @@ where
         let resp = resp.object.unwrap();
         let resp_obj = DsgQueryObject::clone_from_slice(resp.object_raw.as_slice())?;
         DsgQuery::try_from(resp_obj)
+    }
+
+    pub async fn recovery_contract(&self, contract_id: &ObjectId, latest_dec_id: &ObjectId, target_id: &ObjectId, target_dec_id: &ObjectId) -> BuckyResult<String> {
+        let req = RecoveryReq {
+            contract_id: contract_id.to_string(),
+            latest_state_id: latest_dec_id.to_string(),
+            target_id: target_id.to_string(),
+            target_dec_id: target_dec_id.to_string()
+        };
+        let dec_id = self.stack.dec_id().unwrap().clone();
+        let owner_id = self.stack.local_device().desc().owner().as_ref().unwrap().clone();
+        let local_id = self.stack.local_device_id().object_id().clone();
+        let req = DsgJSONObject::new(dec_id, owner_id, DsgJsonProtocol::Recovery as u16, &req)?;
+        let req_path = CyfsPath::new(local_id, dsg_dec_id(), "/dsg/service/commands/").to_path();
+        let resp: DsgJSONObject = self.stack.put_object_with_resp2(req_path.as_str(), req.desc().object_id(), req.to_vec()?).await?;
+        resp.get()
+    }
+
+    pub async fn query_recovery_state(&self, task_id: String) -> BuckyResult<RecoveryState> {
+        let dec_id = self.stack.dec_id().unwrap().clone();
+        let owner_id = self.stack.local_device().desc().owner().as_ref().unwrap().clone();
+        let local_id = self.stack.local_device_id().object_id().clone();
+        let req = DsgJSONObject::new(dec_id, owner_id, DsgJsonProtocol::QueryRecoveryState as u16, &task_id)?;
+        let req_path = CyfsPath::new(local_id, dsg_dec_id(), "/dsg/service/commands/").to_path();
+        let resp: DsgJSONObject = self.stack.put_object_with_resp2(req_path.as_str(), req.desc().object_id(), req.to_vec()?).await?;
+        resp.get()
     }
 
     pub async fn get_object_from_noc<O: for<'de> RawDecode<'de>>(
