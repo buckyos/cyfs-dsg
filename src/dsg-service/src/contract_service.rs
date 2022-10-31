@@ -418,7 +418,7 @@ impl DsgService {
             None,
             Some(path),
             RouterHandlerAction::Default,
-            Some(Box::new(OnQuery {service: self.clone()})))
+            Some(Box::new(DsgCommands {service: self.clone()})))
             .map_err(|err| {
                 log::error!("{} listen failed, err=register OnDsgCommand handler {}", self, err);
                 err
@@ -1423,6 +1423,7 @@ impl DsgService {
         let state_ref = DsgContractStateObjectRef::from(latest_state);
         let next_state = state_ref.next(DsgContractState::DataSourceStored)?;
         let next_state_ref = DsgContractStateObjectRef::from(&next_state);
+        self.put_object_to_noc(next_state_ref.id(), next_state_ref.as_ref()).await?;
         let op = self.stack().root_state_stub(None, None).create_path_op_env().await?;
         let path = format!("/dsg-service/contracts/{}/", contract_id);
         op.set_with_key(path.as_str(), "contract", contract_id, None, true).await?;

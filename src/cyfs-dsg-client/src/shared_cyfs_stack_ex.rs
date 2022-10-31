@@ -269,7 +269,7 @@ pub trait SharedCyfsStackEx {
     async fn resolve_ood(&self, object_id: ObjectId) -> BuckyResult<ObjectId>;
     async fn resolve_ood_list(&self, object_id: ObjectId) -> BuckyResult<Vec<DeviceId>>;
     async fn get_object_from_noc<T: for <'a> RawDecode<'a>>(&self, object_id: ObjectId) -> BuckyResult<T>;
-    async fn put_object_to_noc<T: ObjectType + Sync + Send>(&self, obj: &NamedObjectBase<T>) -> BuckyResult<ObjectId>
+    async fn put_object_to_noc<T: ObjectType + Sync + Send>(&self, obj: &NamedObjectBase<T>, access: Option<AccessString>) -> BuckyResult<ObjectId>
         where <T as cyfs_base::ObjectType>::ContentType: cyfs_base::BodyContent + cyfs_base::RawEncode,
               <T as cyfs_base::ObjectType>::DescType: RawEncodeWithContext<cyfs_base::NamedObjectContext>;
     async fn get_object<T: for <'a> RawDecode<'a>>(
@@ -357,7 +357,7 @@ impl SharedCyfsStackEx for SharedCyfsStack {
         self.get_object(None, object_id).await
     }
 
-    async fn put_object_to_noc<T: ObjectType + Sync + Send>(&self, obj: &NamedObjectBase<T>) -> BuckyResult<ObjectId>
+    async fn put_object_to_noc<T: ObjectType + Sync + Send>(&self, obj: &NamedObjectBase<T>, access: Option<AccessString>) -> BuckyResult<ObjectId>
         where <T as cyfs_base::ObjectType>::ContentType: cyfs_base::BodyContent + cyfs_base::RawEncode,
               <T as cyfs_base::ObjectType>::DescType: RawEncodeWithContext<cyfs_base::NamedObjectContext> {
         let object_id = obj.desc().calculate_id();
@@ -374,7 +374,7 @@ impl SharedCyfsStackEx for SharedCyfsStack {
             object_raw,
             object: None
         },
-            access: None
+            access
         }).await?;
 
         Ok(object_id)
