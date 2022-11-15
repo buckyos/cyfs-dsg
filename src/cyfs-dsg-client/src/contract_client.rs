@@ -1,4 +1,5 @@
 use std::{convert::TryFrom, fmt::Debug, sync::Arc};
+use std::str::FromStr;
 use cyfs_base::*;
 use cyfs_lib::*;
 use crate::{contracts::*, DSGJSON, DsgJSONObject, DsgJsonProtocol, query::*, RecoveryReq, RecoveryState};
@@ -144,6 +145,17 @@ where
         let req_path = CyfsPath::new(local_id, dsg_dec_id(), "/dsg/service/commands/").to_path();
         let resp: DsgJSONObject = self.stack.put_object_with_resp2(req_path.as_str(), req.desc().object_id(), req.to_vec()?).await?;
         resp.get()
+    }
+
+    pub async fn revert(&self, state_id: &ObjectId) -> BuckyResult<ObjectId> {
+        let dec_id = self.stack.dec_id().unwrap().clone();
+        let owner_id = self.stack.local_device().desc().owner().as_ref().unwrap().clone();
+        let local_id = self.stack.local_device_id().object_id().clone();
+        let req = DsgJSONObject::new(dec_id, owner_id, DsgJsonProtocol::Revert as u16, &state_id.to_string())?;
+        let req_path = CyfsPath::new(local_id, dsg_dec_id(), "/dsg/service/commands/").to_path();
+        let resp: DsgJSONObject = self.stack.put_object_with_resp2(req_path.as_str(), req.desc().object_id(), req.to_vec()?).await?;
+        let revert_id: String = resp.get()?;
+        Ok(ObjectId::from_str(revert_id.as_str())?)
     }
 
     pub async fn get_object_from_noc<O: for<'de> RawDecode<'de>>(

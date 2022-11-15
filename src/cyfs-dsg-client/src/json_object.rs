@@ -126,6 +126,8 @@ pub enum DsgJsonProtocol {
     RecoveryResp,
     QueryRecoveryState,
     QueryRecoveryStateResp,
+    Revert,
+    RevertResp,
 }
 
 #[derive(RawEncode, RawDecode, Clone, Serialize, Deserialize)]

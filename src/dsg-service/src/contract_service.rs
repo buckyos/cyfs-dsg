@@ -522,6 +522,39 @@ impl DsgService {
         Ok(DsgJSONObject::new(dsg_dec_id(), self.0.owner_id.clone(), DsgJsonProtocol::QueryRecoveryStateResp as u16, &state)?)
     }
 
+    async fn on_revert(&self, state_id: String) -> BuckyResult<DsgJSONObject> {
+        let state_id = ObjectId::from_str(state_id.as_str())?;
+        let state: DsgContractStateObject = self.get_object_from_noc(state_id.clone()).await?;
+        let state_ref = DsgContractStateObjectRef::from(&state);
+        let contract_id = state_ref.contract_id();
+        let op = self.stack().root_state_stub(None, None).create_path_op_env().await?;
+        if let Some(cur_state_id) = op.get_by_key(format!("/dsg-service/contracts/{}/", contract_id), "state").await? {
+            let mut cur_state: DsgContractStateObject = self.get_object_from_noc(cur_state_id).await?;
+            let mut stored_id = None;
+            loop {
+                let cur_state_ref = DsgContractStateObjectRef::from(&cur_state);
+                if let DsgContractState::DataSourceStored = cur_state_ref.state() {
+                    stored_id = Some(cur_state_ref.id());
+                }
+                if state_id == cur_state_ref.id() {
+                    break;
+                } else if cur_state_ref.prev_state_id().is_none() {
+                    break;
+                }
+                cur_state = self.get_object_from_noc(cur_state_ref.prev_state_id().unwrap().clone()).await?;
+            }
+            if stored_id.is_some() {
+                op.set_with_key(format!("/dsg-service/contracts/{}/", contract_id), "state", stored_id.as_ref().unwrap(), None, true).await?;
+                op.commit().await?;
+                Ok(DsgJSONObject::new(dsg_dec_id(), self.0.owner_id.clone(), DsgJsonProtocol::RevertResp as u16, &stored_id.as_ref().unwrap().to_string())?)
+            } else {
+                Ok(DsgJSONObject::new(dsg_dec_id(), self.0.owner_id.clone(), DsgJsonProtocol::RevertResp as u16, &cur_state_id.to_string())?)
+            }
+        } else {
+            Err(cyfs_err!(BuckyErrorCode::NotFound, "contract {} havn't state", contract_id.to_string()))
+        }
+    }
+
     pub(crate) async fn sync_contract_state(&self, state: DsgContractStateObject, from: Option<ObjectId>) -> BuckyResult<DsgContractStateObject> {
         let state_ref = DsgContractStateObjectRef::from(&state);
         let _ = self.put_object_to_noc(state_ref.id(), state_ref.as_ref()).await?;
@@ -692,6 +725,10 @@ impl DsgService {
                 }
             }
         }?;
+
+        let chunk_bundle = ChunkBundle::new(prepared.chunks.clone(), ChunkBundleHashMethod::Serial);
+        let file = File::new(ObjectId::default(), chunk_bundle.len(), chunk_bundle.calc_hash_value(), ChunkList::ChunkInBundle(chunk_bundle)).no_create_time().build();
+        let _ = self.put_object_to_noc(file.desc().object_id(), &file).await?;
 
         let challenge_ref = DsgChallengeObjectRef::from(&challenge);
         let _ = self.post_challenge(challenge_ref, self.get_miner_device_id(contract.miner()).await?, contract.witness_dec_id().map(|v| v.clone())).await

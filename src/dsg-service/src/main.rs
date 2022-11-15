@@ -49,9 +49,9 @@ async fn main_run() {
 
     let dec_id = dsg_dec_id();
     log::info!("----> dec id # {}", &dec_id);
-    let stack = SharedCyfsStack::open_default(Some(dec_id))
-        .await
-        .unwrap();
+    let mut stack_params = SharedCyfsStackParam::default(Some(dec_id.clone()));
+    // stack_params.requestor_config = CyfsStackRequestorConfig::ws();
+    let stack = Arc::new(SharedCyfsStack::open(stack_params).await.unwrap());
     stack.wait_online(None).await.unwrap();
 
     let path = RequestGlobalStatePath::new(None, Some("/dmc/dsg/miner/")).format_string();
@@ -64,7 +64,7 @@ async fn main_run() {
     dsg_config.challenge_interval = Duration::from_secs(config.get_int("challenge_interval").unwrap() as u64);
     dsg_config.initial_challenge.live_time = Duration::from_secs(config.get_int("initial_challenge_live_time").unwrap() as u64);
     dsg_config.store_challenge.live_time = Duration::from_secs(config.get_int("store_challenge_live_time").unwrap() as u64);
-    let _service = DsgService::new(Arc::new(stack), dsg_config)
+    let _service = DsgService::new(stack, dsg_config)
         .await
         .unwrap();
 
