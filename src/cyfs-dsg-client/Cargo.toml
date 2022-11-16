@@ -26,6 +26,7 @@ cyfs-debug = "0.6"
 cyfs-core = "0.6"
 cyfs-bdt = "0.6"
 cyfs-chunk-lib = "0.6"
+tracing = { version = "0.1", features = ["log-always"]}
 
 [build-dependencies]
 protoc-rust = '2'

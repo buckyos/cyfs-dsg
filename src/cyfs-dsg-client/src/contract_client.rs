@@ -121,10 +121,11 @@ where
         DsgQuery::try_from(resp_obj)
     }
 
-    pub async fn recovery_contract(&self, contract_id: &ObjectId, latest_dec_id: &ObjectId, target_id: &ObjectId, target_dec_id: &ObjectId) -> BuckyResult<String> {
+    #[tracing::instrument(skip(self), ret, err)]
+    pub async fn recovery_contract(&self, contract_id: &ObjectId, latest_state_id: &ObjectId, target_id: &ObjectId, target_dec_id: &ObjectId) -> BuckyResult<String> {
         let req = RecoveryReq {
             contract_id: contract_id.to_string(),
-            latest_state_id: latest_dec_id.to_string(),
+            latest_state_id: latest_state_id.to_string(),
             target_id: target_id.to_string(),
             target_dec_id: target_dec_id.to_string()
         };

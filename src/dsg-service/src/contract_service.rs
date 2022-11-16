@@ -1466,7 +1466,7 @@ impl DsgService {
         op.set_with_key(path.as_str(), "contract", contract_id, None, true).await?;
         op.set_with_key(path.as_str(), "state", &next_state_ref.id(), None, true).await?;
         for state_id in all_states.iter() {
-            op.insert_with_key(path.as_str(), "states", state_id).await?;
+            op.insert(format!("{}states", path.as_str()), state_id).await?;
         }
         let mut chunk_list = Vec::new();
         for state_id in all_states.iter().rev() {

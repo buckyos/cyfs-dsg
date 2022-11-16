@@ -77,7 +77,7 @@ impl RecoveryTask {
     async fn download(&self, chunk_list: Vec<ChunkId>, source_list: Vec<DeviceId>) -> BuckyResult<()> {
         let chunk_bundle = ChunkBundle::new(chunk_list, ChunkBundleHashMethod::Serial);
         let owner_id = self.stack.local_device().desc().owner().clone().unwrap();
-        let file = File::new(owner_id, chunk_bundle.len(), chunk_bundle.calc_hash_value(), ChunkList::ChunkInBundle(chunk_bundle)).no_create_time().build();
+        let file = File::new(ObjectId::default(), chunk_bundle.len(), chunk_bundle.calc_hash_value(), ChunkList::ChunkInBundle(chunk_bundle)).no_create_time().build();
         let file_id = file.desc().object_id();
         self.service.put_object_to_noc(file_id.clone(), &file).await?;
 
