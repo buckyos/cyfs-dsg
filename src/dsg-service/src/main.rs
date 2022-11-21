@@ -50,7 +50,7 @@ async fn main_run() {
     let dec_id = dsg_dec_id();
     log::info!("----> dec id # {}", &dec_id);
     let mut stack_params = SharedCyfsStackParam::default(Some(dec_id.clone()));
-    // stack_params.requestor_config = CyfsStackRequestorConfig::ws();
+    stack_params.requestor_config = CyfsStackRequestorConfig::ws();
     let stack = Arc::new(SharedCyfsStack::open(stack_params).await.unwrap());
     stack.wait_online(None).await.unwrap();
 
