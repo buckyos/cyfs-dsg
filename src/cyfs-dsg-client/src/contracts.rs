@@ -257,7 +257,7 @@ where
                 None
             },
             body_hash: if proto.has_body_hash() {
-                Some(HashValue::from(proto.take_body_hash().as_slice()))
+                Some(HashValue::try_from(proto.take_body_hash().as_slice())?)
             } else {
                 None
             }
@@ -681,7 +681,7 @@ impl TryFrom<protos::DataSourceChangedState> for DsgDataSourceChangedState {
             storage,
             witness: if proto.has_witness() {Some(proto.take_witness())} else {None},
             prev_change: if proto.has_prev_change() {Some(ObjectId::clone_from_slice(proto.take_prev_change().as_slice()))} else {None},
-            stored_hash: if proto.has_stored_hash() {Some(HashValue::from(proto.take_stored_hash().as_slice()))} else {None}
+            stored_hash: if proto.has_stored_hash() {Some(HashValue::try_from(proto.take_stored_hash().as_slice())?)} else {None}
         })
     }
 }
@@ -786,7 +786,7 @@ impl TryFrom<protos::ContractStateDesc> for DsgContractStateDesc {
             contract: ProtobufCodecHelper::decode_buf(proto.take_contract())?,
             state: DsgContractState::try_from(proto.take_state())?,
             body_hash: if proto.has_body_hash() {
-                Some(HashValue::from(proto.take_body_hash().as_slice()))
+                Some(HashValue::try_from(proto.take_body_hash().as_slice())?)
             } else {
                 None
             }
