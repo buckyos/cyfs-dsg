@@ -680,7 +680,7 @@ impl TryFrom<protos::DataSourceChangedState> for DsgDataSourceChangedState {
             chunks: ProtobufCodecHelper::decode_buf_list(proto.take_chunks())?,
             storage,
             witness: if proto.has_witness() {Some(proto.take_witness())} else {None},
-            prev_change: if proto.has_prev_change() {Some(ObjectId::clone_from_slice(proto.take_prev_change().as_slice()))} else {None},
+            prev_change: if proto.has_prev_change() {Some(ObjectId::clone_from_slice(proto.take_prev_change().as_slice())?)} else {None},
             stored_hash: if proto.has_stored_hash() {Some(HashValue::try_from(proto.take_stored_hash().as_slice())?)} else {None}
         })
     }

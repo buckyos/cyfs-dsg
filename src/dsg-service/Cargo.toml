@@ -19,7 +19,7 @@ cyfs-base = "0.6"
 cyfs-debug = "0.6"
 cyfs-util = "0.6"
 cyfs-bdt = "0.6"
-cyfs-lib = "0.7"
+cyfs-lib = "0.8"
 cyfs-task-manager = "0.6"
 
 cyfs-dsg-client = {path="../cyfs-dsg-client"}

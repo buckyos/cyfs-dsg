@@ -11,6 +11,7 @@ use sha2::{Digest};
 pub const RECOVERY_TASK: TaskType = TaskType(1);
 pub const RECOVERY_TASK_CATEGORY: TaskCategory = TaskCategory(1);
 
+#[allow(unused)]
 pub struct RecoveryTask {
     stack: Arc<SharedCyfsStack>,
     service: DsgService,
@@ -76,12 +77,11 @@ impl RecoveryTask {
 
     async fn download(&self, chunk_list: Vec<ChunkId>, source_list: Vec<DeviceId>) -> BuckyResult<()> {
         let chunk_bundle = ChunkBundle::new(chunk_list, ChunkBundleHashMethod::Serial);
-        let owner_id = self.stack.local_device().desc().owner().clone().unwrap();
         let file = File::new(ObjectId::default(), chunk_bundle.len(), chunk_bundle.calc_hash_value(), ChunkList::ChunkInBundle(chunk_bundle)).no_create_time().build();
         let file_id = file.desc().object_id();
         self.service.put_object_to_noc(file_id.clone(), &file).await?;
 
-        let task_id = self.stack.trans().create_task(&TransCreateTaskOutputRequest {
+        let task_id = self.stack.trans().create_task(TransCreateTaskOutputRequest {
             common: NDNOutputRequestCommon {
                 req_path: None,
                 dec_id: None,
@@ -93,12 +93,13 @@ impl RecoveryTask {
             object_id: file_id,
             local_path: PathBuf::new(),
             device_list: source_list,
-            context_id: None,
+            group: None,
+            context: None,
             auto_start: true
         }).await?.task_id;
 
         loop {
-            let state = self.stack.trans().get_task_state(&TransGetTaskStateOutputRequest {
+            let state = self.stack.trans().get_task_state(TransGetTaskStateOutputRequest {
                 common: NDNOutputRequestCommon {
                     req_path: None,
                     dec_id: None,
@@ -110,7 +111,7 @@ impl RecoveryTask {
                 task_id: task_id.clone()
             }).await?;
 
-            match state {
+            match state.state {
                 TransTaskState::Pending => {
 
                 }
@@ -133,7 +134,7 @@ impl RecoveryTask {
             }
             async_std::task::sleep(Duration::from_secs(1)).await;
         }
-        self.stack.trans().delete_task(&TransTaskOutputRequest {
+        self.stack.trans().delete_task(TransTaskOutputRequest {
             common: NDNOutputRequestCommon {
                 req_path: None,
                 dec_id: None,

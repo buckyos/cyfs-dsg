@@ -267,7 +267,9 @@ impl ChunksReader {
             },
             object_id: chunk_id.object_id(),
             range: None,
-            inner_path: None
+            inner_path: None,
+            context: None,
+            group: None,
         }).await?;
 
         let mut chunk_data = vec![];

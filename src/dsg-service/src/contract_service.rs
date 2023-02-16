@@ -207,11 +207,6 @@ impl DsgService {
         &self.0.contracts
     }
 
-    // 加载中间的数据状态
-    fn load(&self) -> BuckyResult<()> {
-        Ok(())
-    }
-
     async fn listen(&self) -> BuckyResult<()> {
         // post contract state
         struct OnSyncContractState {
@@ -1388,14 +1383,14 @@ impl DsgService {
                         }
                     }
                 },
-                DsgContractState::DataSourceChanged(changed) => {
+                DsgContractState::DataSourceChanged(_changed) => {
                     let contract: DsgContractObject<DsgIgnoreWitness> = self.get_object_from_noc(contract_id.clone()).await
                         .map_err(|err| {
                             log::debug!("{} check contract failed, contract={}, at={}, err=load contract {}", self, contract_id, now, err);
                             err
                         })?;
                     let contract_ref = DsgContractObjectRef::from(&contract);
-                    self.on_post_contract_state_changed(contract_ref, None, state_ref).await;
+                    let _ = self.on_post_contract_state_changed(contract_ref, None, state_ref).await;
                 },
                 DsgContractState::DataSourceSyncing => {
                     // 如果是正在同步且没有挑战，说明状态发生了错误，回退到DataChanged，重新同步
@@ -1426,7 +1421,7 @@ impl DsgService {
                         return Ok(());
                     }
                     let prepared_state_ref = DsgContractStateObjectRef::from(prepared_state.as_ref().unwrap());
-                    self.on_post_contract_state_changed(contract_ref, None, prepared_state_ref).await;
+                    let _ = self.on_post_contract_state_changed(contract_ref, None, prepared_state_ref).await;
                 }
                 v@_ => {
                     log::debug!("check contract {} state {:?}", contract_id, v);

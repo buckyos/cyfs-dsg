@@ -20,7 +20,7 @@ aes = '=0.7'
 block-modes = '=0.8'
 rand = '0.8.5'
 cyfs-base = "0.6"
-cyfs-lib = "0.7"
+cyfs-lib = "0.8"
 cyfs-util = "0.6"
 cyfs-debug = "0.6"
 cyfs-core = "0.6"

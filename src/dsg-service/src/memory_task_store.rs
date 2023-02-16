@@ -4,6 +4,7 @@ use cyfs_base::{BuckyErrorCode, BuckyResult, DeviceId, ObjectId};
 use cyfs_task_manager::{DecInfo, TaskCategory, TaskId, TaskManagerStore, TaskStatus, TaskStore, TaskType};
 use cyfs_dsg_client::cyfs_err;
 
+#[allow(unused)]
 struct TaskInfo {
     pub task_id: TaskId,
     pub category: TaskCategory,
